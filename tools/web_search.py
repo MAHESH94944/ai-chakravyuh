@@ -1,57 +1,26 @@
 from core.clients import tavily_client
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-
-def tavily_search(query: str, max_results: int = 10, **kwargs) -> list[dict]:
+@retry(
+    stop=stop_after_attempt(3), 
+    wait=wait_exponential(multiplier=1, min=4, max=10)
+)
+def tavily_search(query: str, max_results: int = 5) -> list[dict]:
     """
-    Performs a web search using the Tavily API.
-
-    This wrapper accepts a flexible set of parameters and attempts to map
-    the common `max_results` argument to the concrete parameter name used by
-    the installed Tavily client (which may be `max_results`, `limit`, or `count`).
+    Performs a resilient web search using the Tavily API with automatic retries.
 
     Args:
         query: The search query string.
-        max_results: Preferred number of results to return per query.
-        **kwargs: Additional provider-specific keyword arguments.
-
+        max_results: The maximum number of results to return.
+    
     Returns:
-        A list of search results (each result is a dict). On error returns an empty list.
+        A list of search results.
     """
-    # Prepare the base params
-    base_params = {"query": query, "search_depth": kwargs.pop("search_depth", "basic")}
-
-    # Try several common parameter names for limiting results
-    candidate_names = ["max_results", "limit", "count", "n"]
-    tried = []
-
-    for name in candidate_names:
-        params = base_params.copy()
-        params[name] = max_results
-        params.update(kwargs)
-        try:
-            response = tavily_client.search(**params)
-            # If the client returned something, try to extract results
-            if isinstance(response, dict):
-                return response.get("results", []) or response.get("items", []) or []
-            # If it returned a list directly
-            if isinstance(response, list):
-                return response
-        except TypeError as e:
-            # The client didn't accept this parameter name; try the next one
-            tried.append((name, str(e)))
-            continue
-        except Exception as e:
-            print(f"An error occurred during Tavily search (param {name}): {e}")
-            return []
-
-    # Final attempt: call with only base params
     try:
-        response = tavily_client.search(**base_params)
-        if isinstance(response, dict):
-            return response.get("results", []) or response.get("items", []) or []
-        if isinstance(response, list):
-            return response
+        print(f"    -> Performing Tavily search for: '{query}'")
+        response = tavily_client.search(query=query, search_depth="basic", max_results=max_results)
+        return response.get("results", [])
     except Exception as e:
-        print(f"Tavily search failed after trying params {tried}: {e}")
-
-    return []
+        print(f"An error occurred during Tavily search for query '{query}': {e}")
+        # Reraise the exception to trigger tenacity's retry mechanism
+        raise

@@ -25,6 +25,8 @@ try:
         FASTAPI_HOST: str = "0.0.0.0"
         FASTAPI_PORT: int = 8000
         DEBUG: bool = False
+    # Optional comma-separated list of allowed CORS origins
+    ALLOWED_ORIGINS: Optional[str] = None
 
 
     # Single settings instance for app-wide use
@@ -46,6 +48,8 @@ except Exception:
         FASTAPI_HOST: str = os.getenv("FASTAPI_HOST", "0.0.0.0")
         FASTAPI_PORT: int = int(os.getenv("FASTAPI_PORT", "8000"))
         DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
+    # Comma-separated allowed origins
+    ALLOWED_ORIGINS: Optional[str] = os.getenv("ALLOWED_ORIGINS")
 
 
     settings = Settings()
