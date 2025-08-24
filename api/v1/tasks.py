@@ -4,6 +4,7 @@ from coordinator.workflow import run_full_analysis, synthesize_final_report
 
 router = APIRouter()
 
+
 @router.post("/validate-idea", response_model=FinalReport)
 def validate_idea(idea_input: IdeaInput):
     """
@@ -14,7 +15,7 @@ def validate_idea(idea_input: IdeaInput):
 
     # Step 1: Run the full orchestration to gather data from all agents
     print("--- Calling Coordinator to run full analysis ---")
-    analysis_context = run_full_analysis(idea=idea_input.idea)
+    analysis_context = run_full_analysis(idea=idea_input.idea, location=idea_input.location or None)
     
     if "error" in analysis_context:
         raise HTTPException(status_code=500, detail=analysis_context["error"])

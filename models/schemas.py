@@ -5,6 +5,8 @@ from typing import Literal, List, Dict, Optional, Any
 class IdeaInput(BaseModel):
     """Shape of the input JSON for the validation request."""
     idea: str = Field(..., min_length=1, description="A short description of the startup idea")
+    # Optional free-form location text (e.g. "Alandi, Pune, Maharashtra, India")
+    location: Optional[Dict[str, Any]] = Field(default=None, description="Optional location info; e.g. {'text':'Alandi, Pune, India'} or {'lat':..., 'lon':...}")
 
 
 class TaskResponse(BaseModel):
@@ -36,6 +38,29 @@ class MarketResearchResult(BaseModel):
     research_metadata: Optional[MarketResearchMetadata]
 
 
+class LocationInput(BaseModel):
+    text: Optional[str]
+    lat: Optional[float]
+    lon: Optional[float]
+
+
+class LocationAnalysisResult(BaseModel):
+    location: Dict[str, Any]
+    population: Optional[Dict[str, Any]] = None
+    demand_score: float = 0.0
+    competitor_density: float = 0.0
+    user_interest_trend: Optional[Dict[str, Any]] = None
+    payment_preferences: List[str] = Field(default_factory=list)
+    infrastructure_score: float = 0.0
+    talent_availability: float = 0.0
+    regulatory_flags: List[Dict[str, Any]] = Field(default_factory=list)
+    local_channels: List[str] = Field(default_factory=list)
+    similar_local_startups: List[Dict[str, Any]] = Field(default_factory=list)
+    confidence: float = 0.0
+    recommendations: List[str] = Field(default_factory=list)
+    raw_evidence: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class UserPersonaResult(BaseModel):
     persona_story: str
 
@@ -46,7 +71,8 @@ class TechnicalFeasibilityResult(BaseModel):
 
 
 class FinanceResult(BaseModel):
-    estimated_costs: Dict[str, str] = Field(default_factory=dict)
+    # Allow estimated_costs to be a nested object with keys like initial_development, monthly_operations (which may be a dict of line items)
+    estimated_costs: Dict[str, Any] = Field(default_factory=dict)
     potential_revenue_streams: List[str] = Field(default_factory=list)
 
 

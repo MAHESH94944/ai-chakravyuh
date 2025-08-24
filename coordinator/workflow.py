@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 from agents.market_research import MarketResearchAgent
 from agents.user_persona import UserPersonaAgent
 from agents.technical_feasibility import TechnicalFeasibilityAgent
@@ -7,42 +8,78 @@ from agents.risk import RiskAgent
 from agents.critic import CriticAgent
 from core.clients import gemini_model
 
-def run_full_analysis(idea: str) -> dict:
+def run_full_analysis(idea: str, location: Optional[dict] = None) -> dict:
     """
     Orchestrates the entire multi-agent workflow to gather all analyses.
     """
     print("--- Starting Full Analysis Workflow ---")
     
+    # --- Step 0: Location analysis (optional) ---
+    location_data = None
+    if location and location.get("text"):
+        try:
+            from agents.location_analysis import LocationAnalysisAgent
+            location_agent = LocationAnalysisAgent()
+            location_data = location_agent.run(idea=idea, location_text=location.get("text"))
+            print("--- Location analysis completed ---")
+        except Exception as e:
+            print(f"Location analysis failed: {e}")
+            location_data = {"error": str(e)}
     # --- Step 1: Run initial, parallelizable agents ---
     market_agent = MarketResearchAgent()
-    market_data = market_agent.run(idea=idea)
+    # Pass location context if available (agents can optionally accept it)
+    try:
+        market_data = market_agent.run(idea=idea, location=location_data)  # MarketResearchAgent may ignore location if not implemented
+    except TypeError:
+        market_data = market_agent.run(idea=idea)
     if "error" in market_data: return market_data
 
     tech_agent = TechnicalFeasibilityAgent()
-    tech_data = tech_agent.run(idea=idea)
+    try:
+        tech_data = tech_agent.run(idea=idea, location=location_data)
+    except TypeError:
+        tech_data = tech_agent.run(idea=idea)
     if "error" in tech_data: return tech_data
     
     persona_agent = UserPersonaAgent()
-    persona_data = persona_agent.run(idea=idea)
+    try:
+        persona_data = persona_agent.run(idea=idea, location=location_data)
+    except TypeError:
+        persona_data = persona_agent.run(idea=idea)
     if "error" in persona_data: return persona_data
 
     # --- Step 2: Run agents that depend on initial results ---
     finance_agent = FinanceAgent()
-    finance_data = finance_agent.run(idea=idea, market_research_data=market_data)
+    try:
+        finance_data = finance_agent.run(idea=idea, market_research_data=market_data, location=location_data)
+    except TypeError:
+        finance_data = finance_agent.run(idea=idea, market_research_data=market_data)
     if "error" in finance_data: return finance_data
 
     risk_agent = RiskAgent()
-    risk_data = risk_agent.run(idea=idea, market_research_data=market_data)
+    try:
+        risk_data = risk_agent.run(idea=idea, market_research_data=market_data, location=location_data)
+    except TypeError:
+        risk_data = risk_agent.run(idea=idea, market_research_data=market_data)
     if "error" in risk_data: return risk_data
     
     # --- Step 3: Run the final critic agent ---
     critic_agent = CriticAgent()
-    critique_data = critic_agent.run(
-        idea=idea,
-        finance_data=finance_data,
-        risk_data=risk_data,
-        tech_data=tech_data
-    )
+    try:
+        critique_data = critic_agent.run(
+            idea=idea,
+            finance_data=finance_data,
+            risk_data=risk_data,
+            tech_data=tech_data,
+            location=location_data,
+        )
+    except TypeError:
+        critique_data = critic_agent.run(
+            idea=idea,
+            finance_data=finance_data,
+            risk_data=risk_data,
+            tech_data=tech_data,
+        )
     if "error" in critique_data: return critique_data
 
     print("--- Full Analysis Workflow Finished ---")
@@ -50,12 +87,14 @@ def run_full_analysis(idea: str) -> dict:
     # --- Step 4: Compile all results into a single context object ---
     full_context = {
         "idea": idea,
+        "location": location.get("text") if location else None,
+        "location_analysis": location_data,
         "market_analysis": market_data,
         "user_persona": persona_data,
         "technical_feasibility": tech_data,
         "financial_outlook": finance_data,
         "risk_analysis": risk_data,
-        "final_critique": critique_data
+        "final_critique": critique_data,
     }
     
     return full_context

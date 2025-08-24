@@ -62,20 +62,40 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ## API usage example
 
-POST /api/v1/validate-idea
-Request body:
+POST /api/v1/validate-idea (idea + optional location)
+
+Request body (JSON) — two fields:
+
+- idea (string) — required. Short description of the startup idea.
+- location (object) — optional. Two accepted shapes:
+  - text-only: {"text": "Alandi, Pune, Maharashtra, India"}
+  - coordinates: {"lat": 18.6211, "lon": 73.9209}
+
+Example payloads:
+
+1. With free-form location text:
 
 ```json
-{ "idea": "An AI-powered app for personalized workout and meal plans." }
+{
+  "idea": "An AI-powered app for personalized workout and meal plans.",
+  "location": { "text": "Alandi, Pune, Maharashtra, India" }
+}
+```
+
+2. With coordinates:
+
+```json
+{
+  "idea": "An AI-powered app for personalized workout and meal plans.",
+  "location": { "lat": 18.6211, "lon": 73.9209 }
+}
 ```
 
 Response (example):
 
 ```json
 {
-  "task_id": "<uuid>",
-  "status": "pending",
-  "message": "Your startup idea has been received and is being analyzed."
+  "report": "# Startup Feasibility Report: AI Personal Stylist\n\n... full markdown report ..."
 }
 ```
 
