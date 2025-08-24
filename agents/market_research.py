@@ -132,82 +132,59 @@ class MarketResearchAgent(BaseAgent):
         """Synthesize search results into a comprehensive market research report."""
         if not search_data.get("results"):
             return {"error": "No search results available for synthesis"}
-        
-        prompt = f"""
-        As a senior market research analyst, synthesize the following search results into a comprehensive report for the startup idea: "{idea}"
+        # To avoid exceeding model token limits, compress search results:
+        # keep only key fields (title/snippet/url/query) and limit count.
+        raw_results = search_data.get("results", [])
+        max_items = min(20, len(raw_results))
+        compact = []
+        for r in raw_results[:max_items]:
+            compact.append({
+                "title": r.get("title") or r.get("headline") or r.get("name") or "",
+                "snippet": r.get("snippet") or r.get("summary") or r.get("description") or "",
+                "url": r.get("url") or r.get("link") or "",
+                "query": r.get("search_query", "")
+            })
 
-        SEARCH RESULTS:
-        {json.dumps(search_data['results'], indent=2)}
+        prompt = f"""
+        As a senior market research analyst, synthesize the following compacted search results into a concise market research report for the startup idea: "{idea}"
+
+        COMPACT SEARCH RESULTS (title/snippet/url/query, max {max_items} items):
+        {json.dumps(compact, indent=2)[:6000]}
 
         FAILED QUERIES (for context):
         {json.dumps(search_data.get('failed_queries', []), indent=2)}
 
-        Create a detailed market analysis including:
-
-        1. COMPETITIVE LANDSCAPE:
-           - Direct competitors (companies offering similar solutions)
-           - Indirect competitors (alternative solutions)
-           - Competitive advantages and weaknesses
-           - Market share overview
-
-        2. MARKET ANALYSIS:
-           - Total addressable market (TAM) size and growth projections
-           - Serviceable available market (SAM) estimate
-           - Key market trends and drivers
-           - Growth rate and CAGR if available
-
-        3. TARGET AUDIENCE:
-           - Primary demographic and psychographic characteristics
-           - Key pain points and unmet needs
-           - Buying behaviors and decision-making process
-           - Geographic concentration if relevant
-
-        4. INDUSTRY INSIGHTS:
-           - Barriers to entry and regulatory considerations
-           - Key success factors in this market
-           - Technology trends affecting the industry
-           - Potential partnerships or ecosystem players
-
-        5. RISK ASSESSMENT:
-           - Market saturation level
-           - Customer acquisition challenges
-           - Pricing pressure and competitive intensity
-
-        Return ONLY a JSON object with this exact structure:
-        {{
-            "competitors": ["Company A", "Company B", ...],
-            "market_size": "Detailed description with numbers and context",
-            "target_audience": "Detailed description of ideal customers",
-            "market_trends": ["Trend 1", "Trend 2", ...],
-            "growth_rate": "X% CAGR or growth estimate",
-            "key_risks": ["Risk 1", "Risk 2", ...],
-            "success_factors": ["Factor 1", "Factor 2", ...],
-            "data_quality": "Assessment of research completeness and reliability"
-        }}
+        Produce a JSON object with these keys: competitors, market_size, target_audience, market_trends, growth_rate, key_risks, success_factors, data_quality.
+        Be concise and prioritize facts that can be inferred from the compact results. If data is insufficient, state that explicitly in data_quality.
         """
-        
+
         try:
+            # Use a smaller model and lower max_tokens to reduce TPM and token usage
             chat_completion = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama3-70b-8192",
-                temperature=0.1,  # Lower temperature for more factual responses
-                max_tokens=1000,
+                model="llama3-8b-8192",
+                temperature=0.1,
+                max_tokens=700,
                 response_format={"type": "json_object"},
             )
-            
+
             result = json.loads(chat_completion.choices[0].message.content)
-            
+
             # Add metadata about the research process
             result["research_metadata"] = {
                 "search_queries_attempted": len(queries) if 'queries' in locals() else 0,
-                "search_results_analyzed": search_data["total_results"],
-                "search_success_rate": search_data["success_rate"],
+                "search_results_analyzed": search_data.get("total_results", 0),
+                "search_success_rate": search_data.get("success_rate", "0%"),
                 "synthesis_timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
-            
+
             return result
-            
+
         except Exception as e:
+            # Handle token/rate-limit errors explicitly where possible
+            err_str = str(e)
+            if "tokens" in err_str or "rate_limit" in err_str or "rate_limit_exceeded" in err_str:
+                return {"error": "Model token/rate limit exceeded during synthesis. Try using fewer search results or a smaller model."}
             return {"error": f"Failed to synthesize results: {e}"}
 
     def _create_error_response(self, error_type: str, error_message: str) -> Dict[str, Any]:
