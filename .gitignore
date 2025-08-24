@@ -1,0 +1,10 @@
+# Virtual Environment
+venv/
+__pycache__/
+
+# Environment files
+.env
+
+# IDE files
+.vscode/
+.idea/
