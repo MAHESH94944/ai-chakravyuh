@@ -1,24 +1,32 @@
 from fastapi import APIRouter, HTTPException
-from models.schemas import IdeaInput
-
-# Import our new agent
-from agents.market_research import MarketResearchAgent
+from models.schemas import IdeaInput, FinalReport
+from coordinator.workflow import run_full_analysis, synthesize_final_report
 
 router = APIRouter()
 
-@router.post("/validate-idea")
+@router.post("/validate-idea", response_model=FinalReport)
 def validate_idea(idea_input: IdeaInput):
     """
-    Accepts a startup idea and returns market research for testing.
+    Accepts a startup idea and returns a full, synthesized feasibility report.
     """
     if not idea_input.idea:
         raise HTTPException(status_code=400, detail="Idea text cannot be empty.")
 
-    # Create an instance of the agent and run it
-    research_agent = MarketResearchAgent()
-    result = research_agent.run(idea=idea_input.idea)
+    # Step 1: Run the full orchestration to gather data from all agents
+    print("--- Calling Coordinator to run full analysis ---")
+    analysis_context = run_full_analysis(idea=idea_input.idea)
     
-    if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
+    if "error" in analysis_context:
+        raise HTTPException(status_code=500, detail=analysis_context["error"])
+    print("--- Coordinator finished data gathering ---")
 
-    return result
+
+    # Step 2: Synthesize the final report using all the collected data
+    print("--- Calling Coordinator to synthesize final report ---")
+    report_markdown = synthesize_final_report(analysis_context)
+    
+    if "Error:" in report_markdown:
+        raise HTTPException(status_code=500, detail=report_markdown)
+    print("--- Final report synthesized ---")
+
+    return FinalReport(report=report_markdown)

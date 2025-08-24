@@ -15,3 +15,8 @@ class TaskResponse(BaseModel):
 
 
 __all__ = ["IdeaInput", "TaskResponse"]
+
+# models/schemas.py (add this class)
+
+class FinalReport(BaseModel):
+    report: str

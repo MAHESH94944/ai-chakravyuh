@@ -4,63 +4,55 @@ import json
 
 class FinanceAgent(BaseAgent):
     """
-    An agent that provides a high-level financial outlook based on market research.
+    An agent that provides a high-level financial outlook for a startup idea
+    based on market research data.
     """
-    def run(self, market_research_data: dict) -> dict:
+    def run(self, idea: str, market_research_data: dict) -> dict:
         """
         Executes the agent's task to generate a financial outlook.
 
         Args:
+            idea: The startup idea text.
             market_research_data: The JSON output from the MarketResearchAgent.
         
         Returns:
-            A dictionary containing estimated costs and potential revenue streams.
+            A dictionary containing the financial analysis.
         """
-        print(f"FinanceAgent: Starting financial analysis based on market data: {market_research_data.get('market_size', 'N/A')}")
-        
         prompt = f"""
-        You are an expert financial analyst for startups and venture capital.
-        
-        Based on the following market research data, provide a high-level financial outlook for this startup idea.
-        
-        Market Research Data:
+        You are a seasoned venture capitalist and financial analyst.
+        Your task is to provide a high-level financial outlook for a startup idea based on the market research provided.
+        Use the market size and growth rate data to inform your estimates.
+
+        **Startup Idea:**
+        "{idea}"
+
+        **Market Research Data:**
         {json.dumps(market_research_data, indent=2)}
-        
-        Please provide:
-        1. Estimated startup costs (initial development, marketing, operations)
-        2. Potential revenue streams and business models
-        
-        Return your response as a JSON object with the following structure:
+
+        **Your Task:**
+        1.  Estimate the initial development costs required to launch a minimum viable product (MVP).
+        2.  Estimate the ongoing monthly operational costs (servers, APIs, staff).
+        3.  Suggest three potential revenue streams for this business model.
+
+        Return your response as a single, clean JSON object with the following structure:
         {{
-            "estimated_costs": {{
-                "initial_development": "cost estimate range (e.g., $50,000 - $100,000)",
-                "monthly_operations": "monthly operational cost range"
-            }},
-            "potential_revenue_streams": [
-                "revenue stream 1",
-                "revenue stream 2",
-                "revenue stream 3"
-            ]
+          "estimated_costs": {{
+            "initial_development": "...",
+            "monthly_operations": "..."
+          }},
+          "potential_revenue_streams": ["...", "...", "..."]
         }}
-        
-        Be realistic in your estimates based on the market size, competition, and technical complexity implied by the idea.
-        Consider factors like development time, team size, marketing needs, and ongoing operational expenses.
         """
 
         try:
-            # Call the Gemini API
+            # Call the Gemini API for its strong reasoning
             response = gemini_model.generate_content(prompt)
             
-            # Extract and parse the JSON response
-            # The response might be in a markdown code block, so we clean it up
+            # Clean and parse the JSON response
             cleaned_response = response.text.strip().replace('```json', '').replace('```', '').strip()
             result = json.loads(cleaned_response)
             
             return result
-            
-        except json.JSONDecodeError as e:
-            print(f"JSON parsing error in FinanceAgent: {e}")
-            return {"error": "Failed to parse financial analysis response."}
         except Exception as e:
             print(f"An error occurred in FinanceAgent: {e}")
-            return {"error": "Failed to generate financial analysis."}
+            return {"error": f"Failed to generate financial analysis: {e}"}
