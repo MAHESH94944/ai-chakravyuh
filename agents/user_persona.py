@@ -262,6 +262,10 @@ class UserPersonaAgent(BaseAgent):
     
     def _create_fallback_persona(self, idea: str, country_code: str) -> Dict[str, Any]:
         """Create a fallback persona when research data is limited."""
+        # Base persona templates for different regions. Make them idea-aware (fitness vs generic business).
+        idea_lower = (idea or '').lower()
+        is_fitness = any(k in idea_lower for k in ['fitness', 'wellness', 'workout', 'diet', 'health', 'gym'])
+
         # Base persona templates for different regions
         if country_code in ["US", "CA", "GB", "AU"]:
             return {
@@ -278,19 +282,34 @@ class UserPersonaAgent(BaseAgent):
                 "validation_sources": ["Industry standard persona template"]
             }
         elif country_code in ["IN", "PK", "BD", "LK"]:
-            return {
-                "name": "Raj Sharma",
-                "age": 28,
-                "occupation": "Software Engineer",
-                "income": 1200000,
-                "income_currency": "INR",
-                "location": "Metro city",
-                "goals": ["Career advancement", "Skill development", "Work-life balance"],
-                "pain_points": ["Limited growth opportunities", "High competition", "Work pressure"],
-                "tech_savviness": 5,
-                "buying_behavior": "Values quality and brand reputation",
-                "validation_sources": ["Regional persona template"]
-            }
+            if is_fitness:
+                return {
+                    "name": "Raj Sharma",
+                    "age": 30,
+                    "occupation": "Software Engineer",
+                    "income": 900000,
+                    "income_currency": "INR",
+                    "location": "Metro city",
+                    "goals": ["Stay fit despite a busy schedule", "Eat healthier with local cuisine", "Track workouts and progress"],
+                    "pain_points": ["Difficulty tracking diet with Indian foods", "Lack of time for the gym", "Confusion over local nutrition guidance"],
+                    "tech_savviness": 5,
+                    "buying_behavior": "Values cost-effective, localized solutions",
+                    "validation_sources": ["Regional persona template"]
+                }
+            else:
+                return {
+                    "name": "Raj Sharma",
+                    "age": 28,
+                    "occupation": "Software Engineer",
+                    "income": 1200000,
+                    "income_currency": "INR",
+                    "location": "Metro city",
+                    "goals": ["Career advancement", "Skill development", "Work-life balance"],
+                    "pain_points": ["Limited growth opportunities", "High competition", "Work pressure"],
+                    "tech_savviness": 5,
+                    "buying_behavior": "Values quality and brand reputation",
+                    "validation_sources": ["Regional persona template"]
+                }
         else:
             return {
                 "name": "David Chen",

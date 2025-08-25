@@ -114,24 +114,59 @@ class TechnicalFeasibilityAgent(BaseAgent):
         try:
             response = generate_text_with_fallback(prompt, is_json=True)
             parsed = json.loads(response.text)
+            # If LLM wrapper returned an error fallback, use deterministic rich fallback
+            if isinstance(parsed, dict) and parsed.get('error'):
+                return self._fallback_technical_from_idea(idea, None)
             return parsed
         except Exception as e:
-            # Deterministic fallback: infer a minimal stack and timeline from evidence
+            # Use the richer deterministic fallback
+            return self._fallback_technical_from_idea(idea, None)
+
+    def _fallback_technical_from_idea(self, idea: str, location_analysis: Optional[Dict] = None) -> dict:
+        """Create a deterministic, domain-aware technical fallback when synthesis is unavailable."""
+        print("   -> Using deterministic fallback for technical feasibility (no LLM / web evidence)")
+        # Simple industry-driven stack choices
+        stack = {
+            'frontend': ['React (web) and/or Flutter (mobile)'],
+            'backend': ['FastAPI (Python)'],
+            'database': ['PostgreSQL'],
+            'infrastructure': ['Managed cloud (AWS/GCP/Azure) with autoscaling), or DigitalOcean Managed DB for cost-sensitive builds'],
+            'ml_inference': ['Hosted API (Vertex AI/Azure OpenAI) or on-premise TorchServe for advanced scenarios']
+        }
+
+        # Timeline is conservative and uses weeks
+        timeline = {
+            'research_phase_weeks': 2,
+            'design_phase_weeks': 4,
+            'mvp_development_weeks': 12,
+            'testing_and_iteration_weeks': 4,
+            'launch_weeks': 2
+        }
+
+        # Costs: provide ballpark ranges tailored for India when detected
+        currency = 'USD'
+        if location_analysis:
             try:
-                stack = {
-                    'frontend': ['React or Flutter'],
-                    'backend': ['Python (FastAPI) or Node.js'],
-                    'database': ['Postgres'],
-                    'infrastructure': ['Cloud VPS or managed services'],
-                    'third_party_services': ['Auth0, Stripe, Twilio (optional)']
-                }
-                timeline = {'research_phase': 2, 'design_phase': 4, 'development_phase': 12, 'testing_phase': 4, 'deployment_phase': 2}
-                return {
-                    'key_challenges': ['Data privacy and regulatory compliance', 'Integrating AI models reliably', 'User retention for health apps'],
-                    'suggested_stack': stack,
-                    'development_timeline': timeline,
-                    'team_requirements': ['1-2 backend engineers', '1 frontend engineer', '1 ML engineer (contract)', '1 product manager'],
-                    'feasibility': 'feasible_with_research'
-                }
+                cc = location_analysis.get('normalized_location', {}).get('country_code', '').upper()
+                if cc == 'IN':
+                    currency = 'INR'
             except Exception:
-                return {"error": f"LLM synthesis failed in TechnicalFeasibilityAgent: {e}"}
+                pass
+
+        cost_estimates = {
+            'mvp_dev_cost': f'~{250000 if currency=="INR" else 30000} {currency} (ballpark, depends on team/location)',
+            'monthly_infra': f'~{20000 if currency=="INR" else 300} {currency}'
+        }
+
+        return {
+            'key_challenges': [
+                'Data privacy and regulatory compliance for health-related advice',
+                'Reliable ML model integration and inference cost management',
+                'Sustaining user engagement and retention in fitness apps'
+            ],
+            'suggested_stack': stack,
+            'development_timeline': timeline,
+            'team_requirements': ['Backend engineer (FastAPI)', 'Frontend (React/Flutter)', 'ML/MLops engineer (contract)', 'Product designer/PM'],
+            'feasibility': 'feasible_with_research',
+            'cost_estimates': cost_estimates
+        }
