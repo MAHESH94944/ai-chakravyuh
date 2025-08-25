@@ -1,12 +1,38 @@
 import json
 from typing import Optional
+import threading
+import traceback
+import time as _time
 from agents.market_research import MarketResearchAgent
 from agents.user_persona import UserPersonaAgent
 from agents.technical_feasibility import TechnicalFeasibilityAgent
 from agents.finance import FinanceAgent
 from agents.risk import RiskAgent
 from agents.critic import CriticAgent
-from core.clients import gemini_model
+from core.clients import generate_text
+
+def _run_with_timeout(func, args=(), kwargs=None, timeout=25):
+    """Run func in a thread and return result or raise TimeoutError."""
+    if kwargs is None:
+        kwargs = {}
+    result = {}
+
+    def target():
+        try:
+            result['value'] = func(*args, **kwargs)
+        except Exception as e:
+            result['error'] = e
+
+    th = threading.Thread(target=target)
+    th.daemon = True
+    th.start()
+    th.join(timeout)
+    if th.is_alive():
+        raise TimeoutError(f"Function {func.__name__} timed out after {timeout}s")
+    if 'error' in result:
+        raise result['error']
+    return result.get('value')
+
 
 def run_full_analysis(idea: str, location: Optional[dict] = None) -> dict:
     """
@@ -20,67 +46,118 @@ def run_full_analysis(idea: str, location: Optional[dict] = None) -> dict:
         try:
             from agents.location_analysis import LocationAnalysisAgent
             location_agent = LocationAnalysisAgent()
-            location_data = location_agent.run(idea=idea, location_text=location.get("text"))
+            # Pass any provided structured location (city, region, country_code, lat/lon)
+            location_data = _run_with_timeout(location_agent.run, args=(), kwargs={"idea": idea, "location_text": location.get("text"), "provided_location": location}, timeout=20)
             print("--- Location analysis completed ---")
         except Exception as e:
-            print(f"Location analysis failed: {e}")
+            print("Location analysis failed:")
+            traceback.print_exc()
             location_data = {"error": str(e)}
     # --- Step 1: Run initial, parallelizable agents ---
     market_agent = MarketResearchAgent()
     # Pass location context if available (agents can optionally accept it)
     try:
-        market_data = market_agent.run(idea=idea, location=location_data)  # MarketResearchAgent may ignore location if not implemented
+        market_data = _run_with_timeout(market_agent.run, args=(), kwargs={"idea": idea, "location": location_data}, timeout=30)
     except TypeError:
-        market_data = market_agent.run(idea=idea)
-    if "error" in market_data: return market_data
+        try:
+            market_data = _run_with_timeout(market_agent.run, args=(idea,), timeout=30)
+        except Exception:
+            print("MarketResearchAgent failed:")
+            traceback.print_exc()
+            market_data = {"error": "MarketResearchAgent failed"}
+    except Exception:
+        print("MarketResearchAgent failed:")
+        traceback.print_exc()
+        market_data = {"error": "MarketResearchAgent failed"}
+    if "error" in market_data:
+        print("MarketResearchAgent returned error, embedding into context and continuing")
 
     tech_agent = TechnicalFeasibilityAgent()
     try:
-        tech_data = tech_agent.run(idea=idea, location=location_data)
+        tech_data = _run_with_timeout(tech_agent.run, args=(), kwargs={"idea": idea, "location": location_data}, timeout=20)
     except TypeError:
-        tech_data = tech_agent.run(idea=idea)
-    if "error" in tech_data: return tech_data
+        try:
+            tech_data = _run_with_timeout(tech_agent.run, args=(idea,), timeout=20)
+        except Exception:
+            print("TechnicalFeasibilityAgent failed:")
+            traceback.print_exc()
+            tech_data = {"error": "TechnicalFeasibilityAgent failed"}
+    except Exception:
+        print("TechnicalFeasibilityAgent failed:")
+        traceback.print_exc()
+        tech_data = {"error": "TechnicalFeasibilityAgent failed"}
+    if "error" in tech_data:
+        print("TechnicalFeasibilityAgent returned error, embedding into context and continuing")
     
     persona_agent = UserPersonaAgent()
     try:
-        persona_data = persona_agent.run(idea=idea, location=location_data)
+        persona_data = _run_with_timeout(persona_agent.run, args=(), kwargs={"idea": idea, "location": location_data}, timeout=15)
     except TypeError:
-        persona_data = persona_agent.run(idea=idea)
-    if "error" in persona_data: return persona_data
+        try:
+            persona_data = _run_with_timeout(persona_agent.run, args=(idea,), timeout=15)
+        except Exception:
+            print("UserPersonaAgent failed:")
+            traceback.print_exc()
+            persona_data = {"error": "UserPersonaAgent failed"}
+    except Exception:
+        print("UserPersonaAgent failed:")
+        traceback.print_exc()
+        persona_data = {"error": "UserPersonaAgent failed"}
+    if "error" in persona_data:
+        print("UserPersonaAgent returned error, embedding into context and continuing")
 
     # --- Step 2: Run agents that depend on initial results ---
     finance_agent = FinanceAgent()
     try:
-        finance_data = finance_agent.run(idea=idea, market_research_data=market_data, location=location_data)
+        finance_data = _run_with_timeout(finance_agent.run, args=(), kwargs={"idea": idea, "market_research_data": market_data, "location": location_data}, timeout=20)
     except TypeError:
-        finance_data = finance_agent.run(idea=idea, market_research_data=market_data)
-    if "error" in finance_data: return finance_data
+        try:
+            finance_data = _run_with_timeout(finance_agent.run, args=(idea, market_data), timeout=20)
+        except Exception:
+            print("FinanceAgent failed:")
+            traceback.print_exc()
+            finance_data = {"error": "FinanceAgent failed"}
+    except Exception:
+        print("FinanceAgent failed:")
+        traceback.print_exc()
+        finance_data = {"error": "FinanceAgent failed"}
+    if "error" in finance_data:
+        print("FinanceAgent returned error, embedding into context and continuing")
 
     risk_agent = RiskAgent()
     try:
-        risk_data = risk_agent.run(idea=idea, market_research_data=market_data, location=location_data)
+        risk_data = _run_with_timeout(risk_agent.run, args=(), kwargs={"idea": idea, "market_research_data": market_data, "location": location_data}, timeout=20)
     except TypeError:
-        risk_data = risk_agent.run(idea=idea, market_research_data=market_data)
-    if "error" in risk_data: return risk_data
+        try:
+            risk_data = _run_with_timeout(risk_agent.run, args=(idea, market_data), timeout=20)
+        except Exception:
+            print("RiskAgent failed:")
+            traceback.print_exc()
+            risk_data = {"error": "RiskAgent failed"}
+    except Exception:
+        print("RiskAgent failed:")
+        traceback.print_exc()
+        risk_data = {"error": "RiskAgent failed"}
+    if "error" in risk_data:
+        print("RiskAgent returned error, embedding into context and continuing")
     
     # --- Step 3: Run the final critic agent ---
     critic_agent = CriticAgent()
     try:
-        critique_data = critic_agent.run(
-            idea=idea,
-            finance_data=finance_data,
-            risk_data=risk_data,
-            tech_data=tech_data,
-            location=location_data,
-        )
+        critique_data = _run_with_timeout(critic_agent.run, args=(), kwargs={"idea": idea, "finance_data": finance_data, "risk_data": risk_data, "tech_data": tech_data, "location": location_data}, timeout=20)
     except TypeError:
-        critique_data = critic_agent.run(
-            idea=idea,
-            finance_data=finance_data,
-            risk_data=risk_data,
-            tech_data=tech_data,
-        )
-    if "error" in critique_data: return critique_data
+        try:
+            critique_data = _run_with_timeout(critic_agent.run, args=(idea, finance_data, risk_data, tech_data), timeout=20)
+        except Exception:
+            print("CriticAgent failed:")
+            traceback.print_exc()
+            critique_data = {"error": "CriticAgent failed"}
+    except Exception:
+        print("CriticAgent failed:")
+        traceback.print_exc()
+        critique_data = {"error": "CriticAgent failed"}
+    if "error" in critique_data:
+        print("CriticAgent returned error, embedding into context and continuing")
 
     print("--- Full Analysis Workflow Finished ---")
 
@@ -158,8 +235,7 @@ Provide a final, one-paragraph verdict. Weigh the market opportunity against the
 """
     
     try:
-        response = gemini_model.generate_content(prompt)
-        # Clean up the response to ensure it's pure markdown
+        response = generate_text(prompt)
         final_report = response.text.strip()
         return final_report
     except Exception as e:

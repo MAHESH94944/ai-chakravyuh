@@ -113,6 +113,39 @@ Each agent returns structured JSON (examples available in project notes). The Co
 
 ## What's next (recommended)
 
+- Quick test payloads (copy/paste into Swagger UI `/docs` -> POST /validate-idea)
+
+- Raw sample you provided (note: this first example contains an extra `additionalProp1` and will not validate cleanly):
+
+```json
+{
+  "idea": "string",
+  "location": {
+    "additionalProp1": {}
+  }
+}
+```
+
+- Corrected test payload (use this in the Swagger UI or in your frontend). This uses the requested location string for Alandi, Pune, Maharashtra, India:
+
+```json
+{
+  "idea": "A decentralized platform for freelancers to get instant micro-payments for completed tasks",
+  "location": { "text": "Alandi, Pune, Maharashtra, India" }
+}
+```
+
+How to test in the running server:
+
+1. Open the FastAPI docs at `http://127.0.0.1:8000/docs` (or your ngrok/public URL + `/docs`).
+2. Find the POST `/validate-idea` operation.
+3. Click "Try it out", paste the JSON from above, then click "Execute".
+4. The response body will contain the generated report (usually a markdown string inside the JSON response).
+
+Notes:
+
+- The app is FastAPI (Swagger UI at `/docs`). If you expect Flask, the same JSON can be used when hitting the Flask endpoint, but this repo serves FastAPI.
+- If you want me to run a POST and show a real response from your local server, tell me which URL to target (local or ngrok) and I'll run the request.
 - Implement `tools/web_search.py` (Tavily client) and `agents/market_research.py` — unlocks cross-agent flows.
 - Implement `coordinator/workflow.py` to call agents and persist results.
 - Add `core/database.py` to log tasks and agent responses to MongoDB.

@@ -1,57 +1,45 @@
-"""Application settings loaded from environment / .env using pydantic-settings.
-
-This module exposes a single `settings` instance that other modules should import
-and reference. Required API keys are validated at startup.
-"""
+# core/config.py
+"""Application settings with enhanced API configuration for multiple data sources."""
 
 from typing import Optional
 import os
-
-try:
-    from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-    class Settings(BaseSettings):
-        # Load variables from the .env file (repo root)
-        model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+class Settings(BaseSettings):
+    # Load variables from the .env file
+    # Allow extra environment variables (for example external services that use
+    # different key names like `mongodb_uri`) so startup doesn't fail on unknown keys.
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow",
+    )
 
-        # Required API keys
-        GEMINI_API_KEY: str
-        GROQ_API_KEY: str
-        TAVILY_API_KEY: str
-
-        # Optional / deployment settings
-        MONGO_URI: Optional[str] = None
-        FASTAPI_HOST: str = "0.0.0.0"
-        FASTAPI_PORT: int = 8000
-        DEBUG: bool = False
+    # API keys (optional for local/dev runs). If you plan to use LLM and web-search
+    # features in production, set these in your environment or in a .env file.
+    GEMINI_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
+    SERPAPI_API_KEY: Optional[str] = None
+    OPENROUTING_API_KEY: Optional[str] = None
+    OPENWEATHER_API_KEY: Optional[str] = None
+    
+    # Financial data APIs
+    ALPHA_VANTAGE_API_KEY: Optional[str] = None
+    FRED_API_KEY: Optional[str] = None
+    
+    # Optional / deployment settings
+    MONGO_URI: Optional[str] = None
+    FASTAPI_HOST: str = "0.0.0.0"
+    FASTAPI_PORT: int = 8000
+    DEBUG: bool = False
+    
     # Optional comma-separated list of allowed CORS origins
     ALLOWED_ORIGINS: Optional[str] = None
 
 
-    # Single settings instance for app-wide use
-    settings = Settings()
-
-except Exception:
-    # Lightweight fallback if pydantic-settings isn't installed in the dev env.
-    # This keeps the module importable while still allowing local testing.
-    from dotenv import load_dotenv
-
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
-
-
-    class Settings:  # simple container
-        GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
-        GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
-        TAVILY_API_KEY: Optional[str] = os.getenv("TAVILY_API_KEY")
-        MONGO_URI: Optional[str] = os.getenv("MONGO_URI")
-        FASTAPI_HOST: str = os.getenv("FASTAPI_HOST", "0.0.0.0")
-        FASTAPI_PORT: int = int(os.getenv("FASTAPI_PORT", "8000"))
-        DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
-    # Comma-separated allowed origins
-    ALLOWED_ORIGINS: Optional[str] = os.getenv("ALLOWED_ORIGINS")
-
-
-    settings = Settings()
+# Single settings instance for app-wide use
+settings = Settings()
 
 __all__ = ["Settings", "settings"]
