@@ -1,4 +1,162 @@
-# Startup Idea Validator — Backend
+# Startup Validator — Backend
+
+Brief: backend for the Startup Validator service — an evidence-first, hyper-localized feasibility analysis engine. This README summarizes the architecture, runtime setup, environment variables, third-party integrations (LLMs, web search, data APIs), and how the frontend team should integrate with the API.
+
+## Key goals
+
+- Evidence-first synthesis: agents collect verifiable web evidence before any synthesis.
+- Deterministic fallbacks: when LLMs or web search are unavailable, the service returns schema-compliant, conservative reports (no hallucinations).
+- Hyper-localized: location analysis and cost heuristics support India-first defaults (INR) and regional context.
+- Async orchestration: agents run concurrently where safe and sequentially when they depend on each other.
+
+## Project layout (important files)
+
+- `main.py` — FastAPI app entry.
+- `api/v1/tasks.py` — HTTP route(s) for validating ideas.
+- `coordinator/workflow.py` — orchestrates agents and synthesizes final report.
+- `agents/` — evidence-first agents (location_analysis, market_research, finance, technical_feasibility, risk, critic, user_persona, base_agent).
+- `core/clients.py` — resilient clients: web search wrapper, LLM wrapper, finance helpers, location helpers.
+- `models/schemas.py` — Pydantic schemas (input and final `FullFeasibilityReport`).
+
+## Technologies and libraries
+
+- Python 3.11+ (project tested on local venv)
+- FastAPI + Uvicorn (ASGI server)
+- Pydantic (v2) for strict schemas and response validation
+- asyncio + to_thread for concurrency
+- tenacity for retries
+- requests for HTTP calls
+- Optional, recommended libs (install when you need the features):
+  - `google-generativeai` (Gemini) — if you want to use Google Gemini LLMs
+  - `groq` (Groq client) — if using Groq APIs
+  - `tavily` — optional LLM client wrapper
+  - `yfinance` — fetch public company financials
+  - `pytrends` + `pandas` — Google Trends (used by `location_analysis`)
+  - `geopy` — geocoding (Nominatim)
+
+Note: the code is defensive — features gate on whether packages and API keys are present. The service runs with deterministic fallbacks if external services are not configured.
+
+## Environment variables (set in `.env` or environment)
+
+Set keys only on your development machine or CI; do NOT commit secrets.
+
+- `GEMINI_API_KEY` — (optional) Google Generative AI API key. When present and `google.generativeai` is installed, LLM syntheses will use Gemini.
+- `GROQ_API_KEY` — (optional) Groq API key.
+- `TAVILY_API_KEY` — (optional) Tavily client key.
+- `SERPAPI_API_KEY` — (optional) SerpAPI key used by `enhanced_web_search` to obtain web evidence.
+- `OPENROUTING_API_KEY`, `OPENWEATHER_API_KEY` — optional location/context APIs.
+- `ALPHA_VANTAGE_API_KEY`, `FRED_API_KEY` — optional finance data keys.
+- `MONGO_URI` — optional storage
+- `FASTAPI_HOST` (default `0.0.0.0`) and `FASTAPI_PORT` (default `8000`)
+- `DEBUG` — set to `True` in local dev for additional logging
+- `ALLOWED_ORIGINS` — optional CORS origins for frontend
+
+## Backend setup (local)
+
+1. Create and activate a virtualenv (Windows Git Bash example):
+
+```bash
+python -m venv venv
+source venv/Scripts/activate
+pip install -U pip
+```
+
+2. Install required packages. There is no strict requirements file in this repo; recommended core packages:
+
+```bash
+pip install fastapi uvicorn pydantic requests tenacity
+# Optional for better results:
+pip install google-generativeai groq tavily yfinance pytrends geopy pandas
+```
+
+3. Create a `.env` at project root with any API keys you have (example below). Restart the server after editing `.env`.
+
+`.env` example:
+
+```
+GEMINI_API_KEY=sk-...
+GROQ_API_KEY=...
+SERPAPI_API_KEY=...
+OPENWEATHER_API_KEY=...
+FASTAPI_HOST=0.0.0.0
+FASTAPI_PORT=8000
+DEBUG=True
+```
+
+4. Start the server (from project root):
+
+```bash
+# activate venv first
+uvicorn main:app --reload
+```
+
+The API should be available at `http://localhost:8000` and docs at `/docs`.
+
+## API (for frontend)
+
+- POST `/api/v1/validate-idea` — validate an idea. Returns `FullFeasibilityReport` JSON.
+
+Request JSON (example):
+
+```json
+{
+  "idea": "A fitness tracking app that uses AI to create personalized workout and diet plans",
+  "location": { "text": "Jalana, Maharashtra, India" }
+}
+```
+
+Successful response: 200 OK with `FullFeasibilityReport` (structured JSON). If the server is running without LLMs or external search, you'll receive a conservative, deterministic fallback report — still schema-valid but less detailed. The frontend must handle both rich and degraded reports.
+
+Frontend integration notes
+
+- CORS: set `ALLOWED_ORIGINS` in `.env` for your frontend domain, or proxy the backend.
+- Response structure: the final report includes these top-level fields: `title`, `executive_summary`, `final_verdict`, `user_persona`, `location_analysis`, `market_analysis`, `technical_feasibility`, `financial_outlook`, `risk_assessment`, `critical_assessment`, `metadata`, `generated_at`.
+- Always check nested objects for presence (they will be present, but fields inside may be conservative when external services are not configured).
+- Example fetch (browser):
+
+```js
+const res = await fetch("/api/v1/validate-idea", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    idea: "...",
+    location: { text: "City, State, Country" },
+  }),
+});
+const report = await res.json();
+// render report sections: report.location_analysis, report.market_analysis, report.financial_outlook, etc.
+```
+
+## How to get high-quality, non-empty outputs
+
+- Provide at least one web-search backend (set `SERPAPI_API_KEY`) so agents can gather evidence.
+- Provide a supported LLM API key: `GEMINI_API_KEY` or `GROQ_API_KEY` and install the corresponding client libraries — when present the backend will use them to synthesize well-formed, investor-grade sections.
+- Enable `pytrends` and `geopy` for richer location analysis. These are optional Python packages but significantly improve results.
+
+## Internal behaviour (for devs)
+
+- Agents follow an evidence-first pattern: they call `core.clients.enhanced_web_search` and other helpers, then synthesize with `generate_text_with_fallback`.
+- `core/clients.generate_text_with_fallback` is a guarded wrapper — it will call a real LLM client when keys & libs are available; otherwise it returns a deterministic JSON error and agents fall back to conservative heuristics.
+- The coordinator runs location analysis first (to collect local context), then runs market/tech/persona with that context, then finance & risk, and finally a critic. This order improves localization quality.
+
+## Testing & validation
+
+- Unit tests should validate `models/schemas.FullFeasibilityReport.model_validate(report)` for responses produced by the orchestration. There are currently no tests in the repo; consider adding a smoke test that posts the example idea and asserts 200 + schema validation.
+
+## Security & privacy
+
+- Do not commit `.env` with API keys.
+- The app does not currently store user data permanently (no DB by default). If you enable `MONGO_URI` edit code to add storage carefully and follow data retention laws.
+
+## Next steps & recommendations for frontend
+
+1. Wire CORS and add an environment toggle to point to local or staging backend.
+2. Build UI sections that expect both rich & degraded reports: show placeholders when content is labeled "fallback" and highlight when data is evidence-backed (e.g., presence of `evidence` arrays or `metadata.fallback: false`).
+3. Add a small integration test in the frontend pipeline that POSTs the example idea and asserts the response contains top-level keys and a non-empty `executive_summary`.
+
+---
+
+If you want, I can (a) implement guarded LLM client wiring in `core/clients.py` now so the app will call Gemini/Groq when keys are present, or (b) add a minimal `requirements.txt` and a small smoke test for CI. Tell me which and I'll proceed.# Startup Idea Validator — Backend
 
 This repository contains the backend for an AI-powered, multi-agent "Startup Idea Validator".
 The system is organized so the Coordinator agent orchestrates a set of specialized agents

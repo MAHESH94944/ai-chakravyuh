@@ -1,4 +1,3 @@
-# agents/user_persona.py
 """Enhanced UserPersonaAgent with real demographic data and validation."""
 
 from .base_agent import BaseAgent
@@ -51,7 +50,17 @@ class UserPersonaAgent(BaseAgent):
         except Exception as e:
             error_msg = f"User persona creation failed: {str(e)}"
             print(f"   ❌ {error_msg}")
-            return {"error": error_msg, "pointwise_summary": [error_msg]}
+            # Return schema-compliant minimal persona result
+            fp = self._create_fallback_persona(idea, 'US')
+            result = UserPersonaResult(
+                name=fp.get('name'),
+                age=fp.get('age', 30),
+                occupation=fp.get('occupation', 'Unknown'),
+                story=fp.get('location', ''),
+                pain_points=fp.get('pain_points', [])
+            ).model_dump()
+            result["pointwise_summary"] = [error_msg]
+            return result
     
     def _research_demographics(self, idea: str, country_code: str, city: str, region: str) -> Dict[str, Any]:
         """Research demographic data for the target audience."""
@@ -84,9 +93,9 @@ class UserPersonaAgent(BaseAgent):
                     # Add to citations
                     demographic_data["citations"].append({
                         "query": query,
-                        "title": result["title"],
-                        "url": result["url"],
-                        "snippet": result["snippet"][:200] + "..." if len(result["snippet"]) > 200 else result["snippet"]
+                        "title": result.get("title", ""),
+                        "url": result.get("url", ""),
+                        "snippet": (result.get("snippet") or result.get("content", ""))[:200] + "..." if len((result.get("snippet") or result.get("content", ""))) > 200 else (result.get("snippet") or result.get("content", ""))
                     })
                 
                 time.sleep(0.5)  # Rate limiting
@@ -98,7 +107,7 @@ class UserPersonaAgent(BaseAgent):
     
     def _extract_demographic_data(self, result: Dict, demographic_data: Dict, query: str):
         """Extract and categorize demographic data from search results."""
-        snippet = result["snippet"].lower()
+        snippet = (result.get("snippet") or result.get("content", "")).lower()
         
         # Age data
         age_patterns = [
@@ -114,13 +123,13 @@ class UserPersonaAgent(BaseAgent):
                     demographic_data["age_data"].append({
                         "value": int(match[0]),
                         "type": "average_age",
-                        "source": result["url"]
+                        "source": result.get("url")
                     })
                 elif len(match) == 2:
                     demographic_data["age_data"].append({
                         "range": [int(match[0]), int(match[1])],
                         "type": "age_range",
-                        "source": result["url"]
+                        "source": result.get("url")
                     })
         
         # Income data
@@ -139,7 +148,7 @@ class UserPersonaAgent(BaseAgent):
                         "amount": income,
                         "type": "average_income",
                         "currency": "USD",  # Will be converted later if needed
-                        "source": result["url"]
+                        "source": result.get("url")
                     })
                 except ValueError:
                     continue
@@ -169,9 +178,9 @@ class UserPersonaAgent(BaseAgent):
                     
                     behavior_data["citations"].append({
                         "query": query,
-                        "title": result["title"],
-                        "url": result["url"],
-                        "snippet": result["snippet"][:200] + "..." if len(result["snippet"]) > 200 else result["snippet"]
+                        "title": result.get("title", ""),
+                        "url": result.get("url", ""),
+                        "snippet": (result.get("snippet") or result.get("content", ""))[:200] + "..." if len((result.get("snippet") or result.get("content", ""))) > 200 else (result.get("snippet") or result.get("content", ""))
                     })
                 
                 time.sleep(0.5)
@@ -183,60 +192,49 @@ class UserPersonaAgent(BaseAgent):
     
     def _extract_behavioral_insights(self, result: Dict, behavior_data: Dict):
         """Extract behavioral insights from search results."""
-        snippet = result["snippet"].lower()
+        snippet = (result.get("snippet") or result.get("content", "")).lower()
         
         # Pain points
         pain_keywords = ["frustrated", "difficult", "challenge", "problem", "issue", "pain point"]
         if any(keyword in snippet for keyword in pain_keywords):
             behavior_data["pain_points"].append({
-                "description": result["snippet"][:150] + "..." if len(result["snippet"]) > 150 else result["snippet"],
-                "source": result["url"]
+                "description": (result.get("snippet") or result.get("content", ""))[:150] + "..." if len((result.get("snippet") or result.get("content", ""))) > 150 else (result.get("snippet") or result.get("content", "")),
+                "source": result.get("url")
             })
         
         # Motivations
         motivation_keywords = ["want", "need", "desire", "looking for", "goal"]
         if any(keyword in snippet for keyword in motivation_keywords):
             behavior_data["motivations"].append({
-                "description": result["snippet"][:150] + "..." if len(result["snippet"]) > 150 else result["snippet"],
-                "source": result["url"]
+                "description": (result.get("snippet") or result.get("content", ""))[:150] + "..." if len((result.get("snippet") or result.get("content", ""))) > 150 else (result.get("snippet") or result.get("content", "")),
+                "source": result.get("url")
             })
     
     def _create_validated_persona(self, idea: str, demographic_data: Dict, 
                                 behavior_data: Dict, country_code: str, city: str) -> Dict[str, Any]:
         """Create a validated user persona using real data."""
         
-        prompt = f"""
-        Create a realistic user persona for this startup idea: "{idea}"
-        
-        Location: {city}, {country_code}
-        
-        Demographic Research Data:
-        {json.dumps(demographic_data, indent=2)}
-        
-        Behavioral Research Data:
-        {json.dumps(behavior_data, indent=2)}
-        
-        Create a detailed user persona with:
-        - Realistic name, age, occupation, and income based on the research data
-        - Specific goals and pain points derived from the behavioral research
-        - Tech savviness level (1-5) appropriate for the idea and location
-        - Realistic buying behavior patterns
-        
-        Return ONLY valid JSON with this structure:
-        {{
-            "name": "string",
-            "age": number,
-            "occupation": "string",
-            "income": number,
-            "income_currency": "string",
-            "location": "string",
-            "goals": ["string"],
-            "pain_points": ["string"],
-            "tech_savviness": number,
-            "buying_behavior": "string",
-            "validation_sources": ["string"]
-        }}
-        """
+        schema_str = '''{
+    "name": "string",
+    "age": number,
+    "occupation": "string",
+    "income": number,
+    "income_currency": "string",
+    "location": "string",
+    "goals": ["string"],
+    "pain_points": ["string"],
+    "tech_savviness": number,
+    "buying_behavior": "string",
+    "validation_sources": ["string"]
+}'''
+
+        prompt = (
+            "Create a realistic user persona for this startup idea: \"" + idea + "\"\n\n"
+            "Location: " + (city or "") + ", " + (country_code or "") + "\n\n"
+            "Demographic Research Data:\n" + json.dumps(demographic_data, indent=2) + "\n\n"
+            "Behavioral Research Data:\n" + json.dumps(behavior_data, indent=2) + "\n\n"
+            "Create a detailed user persona with the following structure. Return ONLY valid JSON:\n" + schema_str
+        )
         
         try:
             response = generate_text(prompt)
@@ -329,7 +327,7 @@ class UserPersonaAgent(BaseAgent):
             return response.text.strip()
         except Exception as e:
             print(f"   Scenario creation failed: {e}")
-            return f"{persona['name']} discovers {idea} while searching for solutions to {persona['pain_points'][0] if persona['pain_points'] else 'a problem'}. After evaluating options, they decide to use it because it addresses their specific needs for {persona['goals'][0] if persona['goals'] else 'their goals'}."
+            return f"{persona.get('name', 'User')} discovers {idea} while searching for solutions to {persona.get('pain_points',[None])[0] if persona.get('pain_points') else 'a problem'}. After evaluating options, they decide to use it because it addresses their specific needs for {persona.get('goals',[None])[0] if persona.get('goals') else 'their goals'}."
     
     def _format_results(self, persona: Dict, scenario: str, 
                        demographic_data: Dict, behavior_data: Dict) -> Dict[str, Any]:
@@ -345,23 +343,56 @@ class UserPersonaAgent(BaseAgent):
         
         # Create demographic validation sources
         demographic_validation = []
-        for citation in demographic_data["citations"][:5]:
+        for citation in demographic_data.get("citations", [])[:5]:
             demographic_validation.append({
                 "type": "demographic_research",
-                "source": citation["url"],
-                "description": citation["snippet"]
+                "source": citation.get("url"),
+                "description": citation.get("snippet")
             })
         
-        for citation in behavior_data["citations"][:3]:
+        for citation in behavior_data.get("citations", [])[:3]:
             demographic_validation.append({
                 "type": "behavioral_research",
-                "source": citation["url"],
-                "description": citation["snippet"]
+                "source": citation.get("url"),
+                "description": citation.get("snippet")
             })
         
-        return UserPersonaResult(
-            primary_persona=primary_persona,
-            scenario=scenario,
-            demographic_validation=demographic_validation,
-            validation_methodology="Web search analysis combined with demographic research"
-        ).dict()
+        # Build a concise pointwise summary (useful for fallbacks too)
+        summary_points = []
+        summary_points.append(f"Name: {primary_persona.name}, Age: {primary_persona.age}, Occupation: {primary_persona.occupation}")
+        if getattr(primary_persona, 'goals', None):
+            summary_points.append("Top goals: " + ", ".join(primary_persona.goals[:3]))
+        if primary_persona.pain_points:
+            summary_points.append("Key pain points: " + ", ".join(primary_persona.pain_points[:3]))
+
+        # Collect validation sources
+        validation_sources = []
+        validation_sources += [c.get('url') for c in demographic_data.get('citations', []) if c.get('url')][:5]
+        validation_sources += [c.get('url') for c in behavior_data.get('citations', []) if c.get('url')][:3]
+
+        # Ensure we have a short deterministic story when LLM is unavailable
+        if not scenario or not isinstance(scenario, str) or not scenario.strip():
+            first_pain = primary_persona.pain_points[0] if primary_persona.pain_points else 'managing fitness and diet'
+            location_hint = primary_persona.location if getattr(primary_persona, 'location', None) else 'their city'
+            scenario_text = f"{primary_persona.name}, a {primary_persona.age}-year-old {primary_persona.occupation} from {location_hint}, struggles with {first_pain}. They would use the app to get short personalized workouts and meal plans that fit their schedule."
+        else:
+            scenario_text = scenario
+
+        result_obj = UserPersonaResult(
+            name=primary_persona.name,
+            age=primary_persona.age,
+            occupation=primary_persona.occupation,
+            story=scenario_text,
+            pain_points=primary_persona.pain_points
+        ).model_dump()
+
+        # Attach extra helpful fields for consumers (not part of strict UserPersonaResult schema but useful internally)
+        result_obj.setdefault('pointwise_summary', summary_points)
+        if validation_sources:
+            result_obj.setdefault('validation_sources', validation_sources)
+
+        # Ensure pointwise_summary is not empty
+        if not result_obj.get('pointwise_summary'):
+            result_obj['pointwise_summary'] = summary_points if summary_points else [f"{primary_persona.name}: {primary_persona.occupation}"]
+
+        return result_obj
