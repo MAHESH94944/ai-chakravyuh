@@ -244,13 +244,17 @@ class UserPersonaAgent(BaseAgent):
             try:
                 persona_data = json.loads(cleaned)
             except Exception:
-                return self._create_fallback_persona(idea, country_code)
+                fp = self._create_fallback_persona(idea, country_code)
+                # Ensure required fields exist
+                persona_data = fp
 
-            # Add validation sources
-            persona_data["validation_sources"] = [
-                source["url"] for source in demographic_data["citations"][:3]
-            ] + [
-                source["url"] for source in behavior_data["citations"][:2]
+            # Add validation sources (safe)
+            persona_data.setdefault("validation_sources", [])
+            persona_data["validation_sources"] += [
+                source.get("url") for source in demographic_data.get("citations", [])[:3]
+            ]
+            persona_data["validation_sources"] += [
+                source.get("url") for source in behavior_data.get("citations", [])[:2]
             ]
 
             return persona_data

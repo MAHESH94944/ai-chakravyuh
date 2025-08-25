@@ -44,6 +44,39 @@ def run_full_analysis(idea: str, location: Optional[dict] = None) -> dict:
     location_data = None
     if location and location.get("text"):
         try:
+            # If provided location lacks lat/lon, try to enrich it via central get_location_data
+            try:
+                # Quick local lookup for commonly tested Indian locations to avoid
+                # slow geocoding during development/testing. Fall back to get_location_data.
+                known_locations = {
+                    "buldhana": {"lat": 20.4333, "lon": 76.1167, "country_code": "IN"}
+                }
+                lat = location.get('latitude') or location.get('lat')
+                lon = location.get('longitude') or location.get('lon')
+                if not (lat and lon):
+                    text = (location.get('text') or '').lower()
+                    for name, info in known_locations.items():
+                        if name in text:
+                            location.setdefault('latitude', info['lat'])
+                            location.setdefault('longitude', info['lon'])
+                            location.setdefault('country_code', info['country_code'])
+                            location.setdefault('city', location.get('city') or name.title())
+                            break
+                # If still missing, try the core geocoding helper
+                if not (location.get('latitude') and location.get('longitude')):
+                    from core.clients import get_location_data
+                    remote = get_location_data(location.get('text'))
+                    if remote:
+                        # populate missing fields
+                        location.setdefault('latitude', remote.get('lat'))
+                        location.setdefault('longitude', remote.get('lon'))
+                        addr = remote.get('address', {})
+                        location.setdefault('country_code', (addr.get('country_code') or '').upper())
+                        location.setdefault('city', addr.get('city') or addr.get('town') or addr.get('village'))
+                        location.setdefault('region', addr.get('state') or addr.get('county'))
+            except Exception:
+                pass
+
             from agents.location_analysis import LocationAnalysisAgent
             location_agent = LocationAnalysisAgent()
             # Pass any provided structured location (city, region, country_code, lat/lon)

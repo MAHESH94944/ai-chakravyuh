@@ -93,21 +93,36 @@ Your task is to generate 8 highly specific search queries for the startup idea: 
 Return ONLY a valid JSON object: {{"queries": ["phrase1", "phrase2", ...]}}
 """
 
+        # If Groq client is not available or fails, return a deterministic set of seed queries
         try:
-            chat_completion = groq_client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="llama3-8b-8192",
-                temperature=0.2,
-                max_tokens=300,
-                response_format={"type": "json_object"},
-            )
-            response_json = json.loads(chat_completion.choices[0].message.content)
-            queries = response_json.get("queries", [])
-            if not queries or not isinstance(queries, list):
-                return {"error": "No valid queries generated"}
-            return queries[:8]
-        except Exception as e:
-            return {"error": f"Failed to generate search queries: {e}"}
+            if groq_client:
+                chat_completion = groq_client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama3-8b-8192",
+                    temperature=0.2,
+                    max_tokens=300,
+                    response_format={"type": "json_object"},
+                )
+                response_json = json.loads(chat_completion.choices[0].message.content)
+                queries = response_json.get("queries", [])
+                if queries and isinstance(queries, list):
+                    return queries[:8]
+        except Exception:
+            # fall through to deterministic fallback
+            pass
+
+        # Deterministic fallback queries
+        base = [
+            f"demand for {idea} in {location}",
+            f"{idea} market size {location}",
+            f"{idea} customers {location}",
+            f"{idea} competitors {location}",
+            f"{idea} price points {location}",
+            f"{idea} licensing requirements {location}",
+            f"best {idea} near {location}",
+            f"{idea} supplier costs {location}"
+        ]
+        return base[:8]
 
     def _expand_queries(self, seeds: List[str]) -> List[str]:
         """Expand seed queries with variants and advanced operators to cover many angles."""
@@ -177,18 +192,12 @@ Return ONLY a valid JSON object: {{"queries": ["phrase1", "phrase2", ...]}}
     
     def _retry_search(self, query: str, max_results: int = 6, retries: int = 3) -> List[Dict[str, Any]]:
         """Perform web search with retry mechanism."""
+        # Use the centralized enhanced_web_search which has multiple fallbacks.
         delay = 1.0
         for attempt in range(1, retries + 1):
             try:
-                response = tavily_client.search(
-                    query=query,
-                    search_depth="basic",
-                    max_results=max_results,
-                    include_answer=False,
-                    include_raw_content=False,
-                    include_images=False
-                )
-                return response.get("results", [])
+                results = enhanced_web_search(query, max_results=max_results)
+                return results
             except Exception as e:
                 if attempt == retries:
                     raise
